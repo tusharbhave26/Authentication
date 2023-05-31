@@ -7,7 +7,8 @@ const mongoose = require("mongoose");
 const session = require("express-session");
 const passport = require("passport")
 const passportlocalmongoose = require("passport-local-mongoose");
-
+const GoogleStrategy = require('passport-google-oauth20').Strategy;
+const findOrCreate = require('mongoose-findorcreate')
 
 
 const app = express()
@@ -22,6 +23,19 @@ app.use(session({
     saveUninitialized: false
 }))
 
+passport.serializeUser(function(user,done){
+    done(null, user.id);
+});
+
+passport.deserializeUser(async function (id, done) {
+    try {
+        const user = await User.findById(id);
+        done(null, user);
+    } catch (err) {
+        done(err, null);
+    }
+});
+
 app.use(passport.initialize());
 app.use(passport.session());
 
@@ -31,24 +45,49 @@ useNewUrlParser: true});
 
 const userSchema = new mongoose.Schema({
     email:String,
-    password: String
+    password: String,
+    googleId: String
 });
 
 userSchema.plugin(passportlocalmongoose)
+userSchema.plugin(findOrCreate);
+
+
 
 const User = new mongoose.model("User", userSchema);
 
 passport.use(User.createStrategy());
-passport.serializeUser(User.serializeUser());
-passport.deserializeUser(User.deserializeUser());
+
+
+passport.use(new GoogleStrategy({
+    clientID:"484907210465-f1f9qtlt0cc3e9jrbhbnuliteg9d4nbu.apps.googleusercontent.com",
+    clientSecret:"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",
+    callbackURL: "http://localhost:3000/auth/google/secrets"
+  },
+  function(accessToken, refreshToken, profile, cb) {
+    User.findOrCreate({ googleId: profile.id }, function (err, user) {
+      return cb(err, user);
+    });
+  }
+));
 
 app.get("/", function(req,res){
     res.render("home")
 })
 
+app.get("/auth/google/", passport.authenticate('google', {scope: ["profile"]}));
+
 app.get("/login", function(req,res){
     res.render("login")
 })
+
+app.get("/auth/google/secrets", 
+  passport.authenticate("google", { failureRedirect: "/login" }),
+  function(req, res) {
+    // Successful authentication, redirect home.
+    res.redirect("/secrets");
+  });
+
 
 app.post("/login",function(req,res){
     const user = new User({
